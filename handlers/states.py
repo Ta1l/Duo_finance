@@ -5,6 +5,7 @@ from aiogram.fsm.state import State, StatesGroup
 class DailyForm(StatesGroup):
     """Ежедневный опрос за день (4 шага по ТЗ)."""
 
+    date_selection = State()     # Ввод даты, за которую редактируем отчёт
     income_card = State()        # Шаг 1: приход на карту
     expenses = State()           # Шаг 2: расходы
     in_transit_earned = State()  # Шаг 3: заработано «в пути»
