@@ -2,9 +2,20 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
+from datetime import datetime as _datetime
 from zoneinfo import ZoneInfo
 
 MSK = ZoneInfo("Europe/Moscow")
+
+
+def parse_date(text: str | None) -> date | None:
+    if text is None:
+        return None
+    try:
+        parsed = _datetime.strptime(text.strip(), "%d.%m.%Y")
+    except ValueError:
+        return None
+    return parsed.date()
 
 
 def now_msk() -> datetime:

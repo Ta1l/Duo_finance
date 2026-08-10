@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 from datetime import date
+from typing import Any
 
 from aiogram import Bot, F, Router
 from aiogram.filters import Command
@@ -15,7 +16,7 @@ from database.models import User
 from handlers.states import DailyForm
 from keyboards.common import is_skip_text, overwrite_keyboard, skip_keyboard
 from services.calculations import fmt_money
-from services.dates import today_msk
+from services.dates import parse_date, today_msk
 from services.render import daily_summary_text
 from services.survey import STEP1_TEXT, survey_intro_text
 from services.validation import parse_amount
@@ -25,14 +26,24 @@ from sqlalchemy.ext.asyncio import AsyncSession
 log = logging.getLogger(__name__)
 router = Router(name="daily")
 
-Q_EXPENSES = "Шаг 2/4: Сколько денег ты потратил за сегодня? (руб.)"
+Q_EXPENSES = "Шаг 2/4: Сколько денег ты потратил за этот день? (руб.)"
 Q_TRANSIT = (
-    "Шаг 3/4: Сколько заработал «в пути» за сегодня "
+    "Шаг 3/4: Сколько заработал «в пути» за этот день "
     "(к выплате в следующий четверг)? (руб.)"
 )
 Q_DEBT = (
-    "Шаг 4/4: Сколько внёс в счёт погашения долга за сегодня? (руб.)\n"
+    "Шаг 4/4: Сколько внёс в счёт погашения долга за этот день? (руб.)\n"
     "<i>Сумма ≥ 0 или нажми «Пропустить (0)».</i>"
+)
+Q_EDITDAY_DATE = (
+    "Введите дату, за которую хотите изменить данные, в формате ДД.ММ.ГГГГ, "
+    "например 04.06.2026."
+)
+ERR_DATE_FORMAT = (
+    "⚠️ Неверный формат даты. Введите её в виде ДД.MM.ГГГГ, например 04.06.2026."
+)
+ERR_DATE_FUTURE = (
+    "⚠️ Нельзя менять данные за будущую дату. Введите дату сегодня или раньше."
 )
 ERR_AMOUNT = (
     "⚠️ Нужно неотрицательное число в рублях.\n"
@@ -43,6 +54,20 @@ ERR_AMOUNT = (
 # ---------------------------------------------------------------------------
 # Завершение опроса: сохранение + пересчёты + воскресный барьер
 # ---------------------------------------------------------------------------
+
+def _format_report_preview(day: date, report: Any) -> str:
+    if report is None:
+        return (
+            f"За {day:%d.%m.%Y} данных нет. Начнём новый отчёт за этот день."
+        )
+    return (
+        f"За {day:%d.%m.%Y} уже есть данные:\n"
+        f"💵 Приход: {fmt_money(report.income_card)} · "
+        f"🧾 Расходы: {fmt_money(report.expenses)}\n"
+        f"🛣 В пути: {fmt_money(report.in_transit_earned)} · "
+        f"💳 В долг: {fmt_money(report.debt_paid)}"
+    )
+
 
 async def _finish(
     message: Message,
@@ -120,6 +145,41 @@ async def cmd_cancel(message: Message, state: FSMContext) -> None:
         "Опрос отменён, ничего не сохранено. Начать заново — /report.",
         reply_markup=ReplyKeyboardRemove(),
     )
+
+
+@router.message(Command("editday"))
+async def cmd_edit_day(
+    message: Message, state: FSMContext, session: AsyncSession, db_user: User
+) -> None:
+    if await state.get_state() is not None:
+        await state.clear()
+
+    await state.set_state(DailyForm.date_selection)
+    await message.answer(Q_EDITDAY_DATE)
+
+
+@router.message(DailyForm.date_selection)
+async def step_edit_day_date(
+    message: Message,
+    state: FSMContext,
+    session: AsyncSession,
+    db_user: User,
+) -> None:
+    report_day = parse_date(message.text)
+    if report_day is None:
+        await message.answer(ERR_DATE_FORMAT)
+        return
+
+    if report_day > today_msk():
+        await message.answer(ERR_DATE_FUTURE)
+        return
+
+    existing = await crud.get_report(session, db_user.id, report_day)
+    await message.answer(_format_report_preview(report_day, existing))
+
+    await state.update_data(report_date=report_day.isoformat())
+    await state.set_state(DailyForm.income_card)
+    await message.answer(survey_intro_text(report_day))
 
 
 @router.message(Command("report"))
