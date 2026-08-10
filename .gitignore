@@ -1,0 +1,15 @@
+# окружение
+.env
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# данные
+*.db
+*.sqlite3
+
+# IDE / прочее
+.idea/
+.vscode/
+.pytest_cache/

@@ -1,0 +1,8 @@
+aiogram>=3.10,<4.0
+SQLAlchemy>=2.0.30
+aiosqlite>=0.20
+APScheduler>=3.10.4,<4.0
+aiohttp-socks>=0.8
+python-dotenv>=1.0.1
+# Для PostgreSQL вместо SQLite замените aiosqlite на:
+# asyncpg>=0.29
