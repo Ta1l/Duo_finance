@@ -4,10 +4,9 @@ from __future__ import annotations
 import asyncio
 import logging
 
-import aiohttp
-
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
+from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
 
@@ -26,7 +25,7 @@ async def main() -> None:
     log = logging.getLogger("duo_finance_bot")
 
     config = load_config()
-    session_factory = None
+    session = None
     if config.proxy_url:
         try:
             from aiohttp_socks import ProxyConnector
@@ -36,19 +35,13 @@ async def main() -> None:
                 "Установите его через pip install aiohttp-socks"
             ) from exc
 
-        # Use aiogram's AiohttpSession factory (callable) so Bot creates
-        # and manages the underlying session correctly. Passing a raw
-        # aiohttp.ClientSession instance causes a "ClientSession object
-        # is not callable" TypeError because aiogram expects a factory.
-        from aiogram.client.session.aiohttp import AiohttpSession
-
         connector = ProxyConnector.from_url(config.proxy_url)
-        session_factory = lambda: AiohttpSession(connector=connector)
+        session = AiohttpSession(connector=connector)
 
     bot = Bot(
         token=config.bot_token,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
-        session=session_factory,
+        session=session,
     )
 
     engine = make_engine(config.database_url)
