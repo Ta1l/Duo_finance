@@ -1,0 +1,24 @@
+[Unit]
+Description=Duo Finance Telegram Bot
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/Duo_finance
+EnvironmentFile=/root/Duo_finance/.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/root/Duo_finance/.venv/bin/python /root/Duo_finance/bot.py
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+KillSignal=SIGINT
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
+
