@@ -25,18 +25,7 @@ async def main() -> None:
     log = logging.getLogger("duo_finance_bot")
 
     config = load_config()
-    session = None
-    if config.proxy_url:
-        try:
-            from aiohttp_socks import ProxyConnector
-        except ImportError as exc:
-            raise RuntimeError(
-                "Для PROXY_URL требуется пакет aiohttp-socks. "
-                "Установите его через pip install aiohttp-socks"
-            ) from exc
-
-        connector = ProxyConnector.from_url(config.proxy_url)
-        session = AiohttpSession(connector=connector)
+    session = AiohttpSession(proxy=config.proxy_url) if config.proxy_url else None
 
     bot = Bot(
         token=config.bot_token,
