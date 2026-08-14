@@ -7,7 +7,7 @@ from unittest import IsolatedAsyncioTestCase
 from aiogram import Bot
 from aiogram.client.session.base import BaseSession
 from aiogram.methods import TelegramMethod
-from aiogram.types import Chat, Message, MessageEntity, Update, User
+from aiogram.types import CallbackQuery, Chat, Message, MessageEntity, Update, User
 
 from bot import build_dispatcher
 from config import Config
@@ -104,6 +104,28 @@ class CommandRoutingTests(IsolatedAsyncioTestCase):
         edit_response = self.api.methods[-1]
         self.assertIn("Выберите день текущей недели", edit_response.text)
         self.assertEqual(len(edit_response.reply_markup.inline_keyboard), 5)
+
+        self.update_id += 1
+        menu_message = Message(
+            message_id=self.update_id,
+            date=datetime.now(timezone.utc),
+            chat=self.chat,
+            from_user=self.user,
+            text=edit_response.text,
+            reply_markup=edit_response.reply_markup,
+        )
+        callback = CallbackQuery(
+            id="editday-callback",
+            from_user=self.user,
+            chat_instance="test-chat",
+            message=menu_message,
+            data="editday:2026-08-10",
+        )
+        await self.dispatcher.feed_update(
+            self.bot,
+            Update(update_id=self.update_id, callback_query=callback),
+        )
+        self.assertIn("Шаг 1/4", self.api.methods[-1].text)
 
         await self.send_command("/help")
         help_response = self.api.methods[-1]
