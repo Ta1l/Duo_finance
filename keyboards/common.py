@@ -24,13 +24,14 @@ def skip_keyboard() -> ReplyKeyboardMarkup:
     )
 
 
-def overwrite_keyboard() -> InlineKeyboardMarkup:
+def overwrite_keyboard(day: date) -> InlineKeyboardMarkup:
     """Inline-подтверждение перезаписи уже заполненного отчёта."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="✏️ Заполнить заново", callback_data="survey:overwrite"
+                    text="✏️ Заполнить заново",
+                    callback_data=f"survey:overwrite:{day.isoformat()}",
                 ),
                 InlineKeyboardButton(text="❌ Оставить", callback_data="survey:dismiss"),
             ]

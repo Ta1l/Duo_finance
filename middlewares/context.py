@@ -34,9 +34,10 @@ class ContextMiddleware(BaseMiddleware):
         if tg_user is None:
             return await handler(event, data)
 
-        is_start_cmd = isinstance(event, Message) and (
-            (event.text or "").split("@")[0].strip().lower().startswith("/start")
-        )
+        tokens = (event.text or "").strip().split(maxsplit=1)
+        first_token = tokens[0].lower() if tokens else ""
+        command = first_token.split("@", maxsplit=1)[0]
+        is_start_cmd = isinstance(event, Message) and command == "/start"
 
         async with self._session_pool() as session:
             db_user = await crud.get_by_tg(session, tg_user.id)

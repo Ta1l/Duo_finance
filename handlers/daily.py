@@ -146,7 +146,10 @@ async def _finish(
 @router.message(Command("cancel"))
 async def cmd_cancel(message: Message, state: FSMContext) -> None:
     if await state.get_state() is None:
-        await message.answer("Сейчас нет активного опроса — всё чисто 👌")
+        await message.answer(
+            "Сейчас нет активного опроса — всё чисто 👌",
+            reply_markup=ReplyKeyboardRemove(),
+        )
         return
     await state.clear()
     await message.answer(
@@ -216,35 +219,48 @@ async def cmd_report(
 ) -> None:
     today = today_msk()
     if await state.get_state() is not None:
-        # Уже в процессе — просто перезапускаем поток за сегодня
         await state.clear()
-    else:
-        existing = await crud.get_report(session, db_user.id, today)
-        if existing is not None:
-            await message.answer(
-                f"ℹ️ Отчёт за {today:%d.%m.%Y} уже заполнен:\n"
-                f"💵 Приход: {fmt_money(existing.income_card)} · "
-                f"🧾 Расходы: {fmt_money(existing.expenses)}\n"
-                f"🛣 В пути: {fmt_money(existing.in_transit_earned)} · "
-                f"💳 В долг: {fmt_money(existing.debt_paid)}\n\n"
-                "Перезаписать его?",
-                reply_markup=overwrite_keyboard(),
-            )
-            return
+
+    existing = await crud.get_report(session, db_user.id, today)
+    if existing is not None:
+        await message.answer(
+            f"ℹ️ Отчёт за {today:%d.%m.%Y} уже заполнен:\n"
+            f"💵 Приход: {fmt_money(existing.income_card)} · "
+            f"🧾 Расходы: {fmt_money(existing.expenses)}\n"
+            f"🛣 В пути: {fmt_money(existing.in_transit_earned)} · "
+            f"💳 В долг: {fmt_money(existing.debt_paid)}\n\n"
+            "Перезаписать его?",
+            reply_markup=overwrite_keyboard(today),
+        )
+        return
 
     await state.set_state(DailyForm.income_card)
     await state.update_data(report_date=today.isoformat())
     await message.answer(survey_intro_text(today))
 
 
-@router.callback_query(F.data == "survey:overwrite")
+@router.callback_query(F.data.startswith("survey:overwrite:"))
 async def cb_overwrite(cb: CallbackQuery, state: FSMContext) -> None:
-    today = today_msk()
+    raw_day = (cb.data or "").rsplit(":", maxsplit=1)[-1]
+    try:
+        report_day = date.fromisoformat(raw_day)
+    except ValueError:
+        await cb.answer("Некорректная дата отчёта.", show_alert=True)
+        return
+
+    if report_day != today_msk():
+        await cb.answer(
+            "Эта кнопка устарела. Откройте /report снова.",
+            show_alert=True,
+        )
+        return
+
+    await state.clear()
     await state.set_state(DailyForm.income_card)
-    await state.update_data(report_date=today.isoformat())
+    await state.update_data(report_date=report_day.isoformat())
     if cb.message is not None:
         await cb.message.edit_text(
-            f"🔄 Заполняем заново отчёт за {today:%d.%m.%Y}.\n\n{STEP1_TEXT}"
+            f"🔄 Заполняем заново отчёт за {report_day:%d.%m.%Y}.\n\n{STEP1_TEXT}"
         )
     await cb.answer()
 

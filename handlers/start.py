@@ -18,24 +18,27 @@ from services.render import status_text
 
 log = logging.getLogger(__name__)
 router = Router(name="start")
+fallback_router = Router(name="fallback")
 
 PLAYERS_LIMIT = 2
 
-HELP_TEXT = (
-    "🤖 <b>Дуэт-финансист</b> — бот парного учёта: гасим долги наперегонки.\n\n"
-    "<b>Команды:</b>\n"
-    "/report — заполнить отчёт за сегодня вручную\n"
-    "/editday — внести или изменить отчёт за день текущей недели\n"
-    "/status — мои текущие показатели\n"
-    "/cancel — прервать текущий опрос\n"
-    "/help — эта справка\n\n"
-    "<b>Расписание (МСК):</b>\n"
-    "• опрос за день — ежедневно в 23:30\n"
-    "• выплата копилки «в пути» — по четвергам в 09:00\n"
-    "• соревновательные итоги недели — в воскресенье, "
-    "как только оба заполнили отчёт\n"
-    "• понедельник 00:00 — старт новой учётной недели"
-)
+def help_text(config: Config) -> str:
+    return (
+        "🤖 <b>Дуэт-финансист</b> — бот парного учёта: гасим долги наперегонки.\n\n"
+        "<b>Команды:</b>\n"
+        "/report — заполнить отчёт за сегодня вручную\n"
+        "/editday — внести или изменить отчёт за день текущей недели\n"
+        "/status — мои текущие показатели\n"
+        "/cancel — прервать текущий опрос\n"
+        "/help — эта справка\n\n"
+        "<b>Расписание (МСК):</b>\n"
+        f"• опрос за день — ежедневно в {config.survey_hour:02d}:"
+        f"{config.survey_minute:02d}\n"
+        f"• выплата копилки «в пути» — по четвергам в {config.payout_hour:02d}:00\n"
+        "• соревновательные итоги недели — в воскресенье, "
+        "как только оба заполнили отчёт\n"
+        "• понедельник 00:00 — старт новой учётной недели"
+    )
 
 
 @router.message(CommandStart())
@@ -96,8 +99,8 @@ async def cmd_start(
 
 
 @router.message(Command("help"))
-async def cmd_help(message: Message) -> None:
-    await message.answer(HELP_TEXT)
+async def cmd_help(message: Message, config: Config) -> None:
+    await message.answer(help_text(config))
 
 
 @router.message(Command("status"))
@@ -126,7 +129,7 @@ async def cmd_status(
     )
 
 
-@router.message(StateFilter(None))
+@fallback_router.message(StateFilter(None))
 async def fallback(message: Message) -> None:
     await message.answer(
         "👋 Я понимаю команды:\n"

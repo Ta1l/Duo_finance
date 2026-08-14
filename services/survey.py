@@ -45,5 +45,9 @@ async def begin_daily_survey(
     await state.clear()
     await state.update_data(report_date=day.isoformat())
     await state.set_state(DailyForm.income_card)
-    await bot.send_message(user.tg_id, survey_intro_text(day))
+    try:
+        await bot.send_message(user.tg_id, survey_intro_text(day))
+    except Exception:
+        await state.clear()
+        raise
     log.info("Ежедневный опрос отправлен: %s (tg_id=%s)", user.display_name, user.tg_id)

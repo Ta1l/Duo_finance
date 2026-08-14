@@ -127,11 +127,9 @@ async def recalc_streak(session: AsyncSession, user: User, anchor: date) -> int:
     Стрик = количество дней подряд (заканчивая anchor-датой),
     когда in_transit_earned > 0. Пропуск дня (нет отчёта) или 0 руб. — разрыв.
     """
-    earliest = anchor - timedelta(days=366)
     rows = await session.scalars(
         select(DailyReport.report_date).where(
             DailyReport.user_id == user.id,
-            DailyReport.report_date >= earliest,
             DailyReport.report_date <= anchor,
             DailyReport.in_transit_earned > 0,
         )

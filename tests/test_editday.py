@@ -9,7 +9,9 @@ from handlers.daily import (
     Q_EDITDAY_MENU,
     _finish,
     cb_edit_day,
+    cb_overwrite,
     cmd_edit_day,
+    cmd_report,
     step_expenses,
     step_income_card,
     step_in_transit,
@@ -253,3 +255,61 @@ class EditDayHandlerTests(IsolatedAsyncioTestCase):
         upsert_report.assert_not_awaited()
         self.assertEqual(state.data, {})
         self.assertIn("Неделя уже сменилась", message.answers[-1][0])
+
+    @patch("handlers.daily.today_msk", return_value=date(2026, 8, 14))
+    @patch("handlers.daily.crud.get_report", new_callable=AsyncMock)
+    async def test_report_does_not_silently_overwrite_existing_data(
+        self, get_report, _today
+    ) -> None:
+        get_report.return_value = SimpleNamespace(
+            income_card=1000,
+            expenses=200,
+            in_transit_earned=300,
+            debt_paid=400,
+        )
+        state = FakeState()
+        state.state = DailyForm.expenses
+        state.data = {"income_card": 999}
+        message = FakeMessage("/report")
+
+        await cmd_report(
+            message,
+            state,
+            session=object(),
+            db_user=SimpleNamespace(id=7),
+        )
+
+        self.assertIsNone(state.state)
+        self.assertEqual(state.data, {})
+        text, keyboard = message.answers[-1]
+        self.assertIn("уже заполнен", text)
+        self.assertEqual(
+            keyboard.inline_keyboard[0][0].callback_data,
+            "survey:overwrite:2026-08-14",
+        )
+
+    @patch("handlers.daily.today_msk", return_value=date(2026, 8, 14))
+    async def test_stale_overwrite_button_cannot_change_another_day(self, _today) -> None:
+        callback = FakeCallback("survey:overwrite:2026-08-13")
+        state = FakeState()
+
+        await cb_overwrite(callback, state)
+
+        self.assertIsNone(state.state)
+        callback.answer.assert_awaited_once_with(
+            "Эта кнопка устарела. Откройте /report снова.",
+            show_alert=True,
+        )
+
+    @patch("handlers.daily.today_msk", return_value=date(2026, 8, 14))
+    async def test_overwrite_button_clears_previous_flow_data(self, _today) -> None:
+        callback = FakeCallback("survey:overwrite:2026-08-14")
+        state = FakeState()
+        state.state = DailyForm.debt_paid
+        state.data = {"edit_mode": True, "income_card": 999}
+
+        await cb_overwrite(callback, state)
+
+        self.assertEqual(state.state, DailyForm.income_card)
+        self.assertEqual(state.data, {"report_date": "2026-08-14"})
+        callback.answer.assert_awaited_once_with()
