@@ -66,6 +66,22 @@ async def get_report(session: AsyncSession, user_id: int, day: date) -> DailyRep
     )
 
 
+async def get_reports_between(
+    session: AsyncSession, user_id: int, date_from: date, date_to: date
+) -> list[DailyReport]:
+    """Отчёты пользователя за диапазон дат, отсортированные по дате."""
+    reports = await session.scalars(
+        select(DailyReport)
+        .where(
+            DailyReport.user_id == user_id,
+            DailyReport.report_date >= date_from,
+            DailyReport.report_date <= date_to,
+        )
+        .order_by(DailyReport.report_date)
+    )
+    return list(reports.all())
+
+
 async def upsert_report(
     session: AsyncSession,
     *,
@@ -129,6 +145,23 @@ async def recalc_streak(session: AsyncSession, user: User, anchor: date) -> int:
     user.streak_days = streak
     await session.flush()
     return streak
+
+
+async def recalc_current_streak(
+    session: AsyncSession, user: User, today: date
+) -> int:
+    """Пересчитывает стрик до последнего заполненного дня, не позднее сегодня."""
+    latest_day = await session.scalar(
+        select(func.max(DailyReport.report_date)).where(
+            DailyReport.user_id == user.id,
+            DailyReport.report_date <= today,
+        )
+    )
+    if latest_day is None:
+        user.streak_days = 0
+        await session.flush()
+        return 0
+    return await recalc_streak(session, user, latest_day)
 
 
 # ---------------------------------------------------------------------------

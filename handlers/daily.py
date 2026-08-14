@@ -14,9 +14,14 @@ from config import Config
 from database import crud
 from database.models import User
 from handlers.states import DailyForm
-from keyboards.common import is_skip_text, overwrite_keyboard, skip_keyboard
+from keyboards.common import (
+    edit_day_keyboard,
+    is_skip_text,
+    overwrite_keyboard,
+    skip_keyboard,
+)
 from services.calculations import fmt_money
-from services.dates import parse_date, today_msk
+from services.dates import editable_report_days, today_msk
 from services.render import daily_summary_text
 from services.survey import STEP1_TEXT, survey_intro_text
 from services.validation import parse_amount
@@ -35,15 +40,9 @@ Q_DEBT = (
     "Шаг 4/4: Сколько внёс в счёт погашения долга за этот день? (руб.)\n"
     "<i>Сумма ≥ 0 или нажми «Пропустить (0)».</i>"
 )
-Q_EDITDAY_DATE = (
-    "Введите дату, за которую хотите изменить данные, в формате ДД.ММ.ГГГГ, "
-    "например 04.06.2026."
-)
-ERR_DATE_FORMAT = (
-    "⚠️ Неверный формат даты. Введите её в виде ДД.MM.ГГГГ, например 04.06.2026."
-)
-ERR_DATE_FUTURE = (
-    "⚠️ Нельзя менять данные за будущую дату. Введите дату сегодня или раньше."
+Q_EDITDAY_MENU = (
+    "🗓 <b>Выберите день текущей недели до сегодняшнего дня</b>\n"
+    "✅ — отчёт уже заполнен, ➕ — данных пока нет."
 )
 ERR_AMOUNT = (
     "⚠️ Нужно неотрицательное число в рублях.\n"
@@ -84,6 +83,15 @@ async def _finish(
     raw_day = data.get("report_date")
     report_day = date.fromisoformat(raw_day) if raw_day else today_msk()
 
+    if data.get("edit_mode") and report_day not in editable_report_days(today_msk()):
+        await state.clear()
+        await message.answer(
+            "Неделя уже сменилась, поэтому этот день больше нельзя изменить. "
+            "Откройте актуальное меню: /editday.",
+            reply_markup=ReplyKeyboardRemove(),
+        )
+        return
+
     prev_streak = db_user.streak_days
     prev_debt = db_user.debt_current
 
@@ -98,7 +106,7 @@ async def _finish(
     )
     # Пересчёт накопительных показателей от источника истины
     await crud.recompute_debt(session, db_user)
-    await crud.recalc_streak(session, db_user, report_day)
+    await crud.recalc_current_streak(session, db_user, today_msk())
     await session.commit()
     await state.clear()
 
@@ -154,32 +162,52 @@ async def cmd_edit_day(
     if await state.get_state() is not None:
         await state.clear()
 
+    days = editable_report_days(today_msk())
+    if not days:
+        await message.answer("Учёт начнётся 10.08.2026. Доступных дней пока нет.")
+        return
+
+    reports = await crud.get_reports_between(session, db_user.id, days[0], days[-1])
+    filled_days = {report.report_date for report in reports}
     await state.set_state(DailyForm.date_selection)
-    await message.answer(Q_EDITDAY_DATE)
+    await message.answer(
+        Q_EDITDAY_MENU,
+        reply_markup=edit_day_keyboard(days, filled_days),
+    )
 
 
-@router.message(DailyForm.date_selection)
-async def step_edit_day_date(
-    message: Message,
+@router.callback_query(F.data.startswith("editday:"))
+async def cb_edit_day(
+    cb: CallbackQuery,
     state: FSMContext,
     session: AsyncSession,
     db_user: User,
 ) -> None:
-    report_day = parse_date(message.text)
-    if report_day is None:
-        await message.answer(ERR_DATE_FORMAT)
+    raw_day = (cb.data or "").partition(":")[2]
+    try:
+        report_day = date.fromisoformat(raw_day)
+    except ValueError:
+        await cb.answer("Некорректная дата.", show_alert=True)
         return
 
-    if report_day > today_msk():
-        await message.answer(ERR_DATE_FUTURE)
+    if report_day not in editable_report_days(today_msk()):
+        await cb.answer(
+            "Этот день уже недоступен. Откройте /editday снова.",
+            show_alert=True,
+        )
         return
 
+    await cb.answer()
     existing = await crud.get_report(session, db_user.id, report_day)
-    await message.answer(_format_report_preview(report_day, existing))
-
-    await state.update_data(report_date=report_day.isoformat())
+    await state.clear()
     await state.set_state(DailyForm.income_card)
-    await message.answer(survey_intro_text(report_day))
+    await state.update_data(report_date=report_day.isoformat(), edit_mode=True)
+
+    if cb.message is not None:
+        await cb.message.edit_text(_format_report_preview(report_day, existing))
+        await cb.message.answer(survey_intro_text(report_day))
+    else:  # pragma: no cover - Telegram обычно передаёт сообщение для inline-кнопки
+        await cb.bot.send_message(cb.from_user.id, survey_intro_text(report_day))
 
 
 @router.message(Command("report"))
@@ -226,6 +254,11 @@ async def cb_dismiss(cb: CallbackQuery) -> None:
     if cb.message is not None:
         await cb.message.edit_text("Ок, оставляем прежний отчёт ✅")
     await cb.answer()
+
+
+@router.message(DailyForm.date_selection)
+async def step_edit_day_selection(message: Message) -> None:
+    await message.answer("Выберите день кнопкой выше или отмените ввод: /cancel.")
 
 
 # ---------------------------------------------------------------------------

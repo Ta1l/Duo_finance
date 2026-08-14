@@ -2,20 +2,10 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
-from datetime import datetime as _datetime
 from zoneinfo import ZoneInfo
 
 MSK = ZoneInfo("Europe/Moscow")
-
-
-def parse_date(text: str | None) -> date | None:
-    if text is None:
-        return None
-    try:
-        parsed = _datetime.strptime(text.strip(), "%d.%m.%Y")
-    except ValueError:
-        return None
-    return parsed.date()
+REPORTING_START_DATE = date(2026, 8, 10)
 
 
 def now_msk() -> datetime:
@@ -30,6 +20,25 @@ def week_bounds(day: date) -> tuple[date, date]:
     """Границы учётной недели (Пн 00:00 — Вс 23:59) для произвольной даты."""
     monday = day - timedelta(days=day.weekday())
     return monday, monday + timedelta(days=6)
+
+
+def editable_report_days(today: date) -> list[date]:
+    """Даты текущей недели, которые уже наступили и доступны для ввода."""
+    if today < REPORTING_START_DATE:
+        return []
+    monday, _ = week_bounds(today)
+    first_day = max(monday, REPORTING_START_DATE)
+    return [
+        first_day + timedelta(days=offset)
+        for offset in range((today - first_day).days + 1)
+    ]
+
+
+def report_day_number(day: date) -> int:
+    """Сквозной номер дня, где 10.08.2026 считается днём 1."""
+    if day < REPORTING_START_DATE:
+        raise ValueError("Дата раньше начала учёта")
+    return (day - REPORTING_START_DATE).days + 1
 
 
 def previous_week_bounds(day: date) -> tuple[date, date]:
